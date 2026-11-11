@@ -1,0 +1,22 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: cap45-backend
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+    expose:
+      - "8080"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: cap45-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
