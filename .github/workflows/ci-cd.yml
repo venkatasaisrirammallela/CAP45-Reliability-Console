@@ -52,3 +52,64 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+  deploy:
+    name: Deploy CAP45 to EC2
+    runs-on: ubuntu-latest
+
+    needs: [backend, frontend]
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    concurrency:
+      group: cap45-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/cap45_deploy
+          chmod 600 ~/.ssh/cap45_deploy
+
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy application
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/cap45_deploy \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "DEPLOY_SHA='$DEPLOY_SHA' bash -se" <<'EOF'
+          set -e
+
+          cd /home/ubuntu/cap45
+
+          echo "Fetching latest application code..."
+          git fetch origin main
+
+          echo "Checking out tested commit..."
+          git checkout --detach "$DEPLOY_SHA"
+
+          echo "Building Docker containers..."
+          docker compose up -d --build --no-deps backend frontend
+
+          echo "Checking running containers..."
+          docker compose ps
+
+          echo "Checking backend API..."
+          docker compose exec -T backend \
+            java -version
+
+          echo "Deployment completed."
+          EOF
